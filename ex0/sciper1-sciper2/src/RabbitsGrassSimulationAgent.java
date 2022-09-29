@@ -1,3 +1,5 @@
+import java.awt.Color;
+
 import uchicago.src.sim.gui.Drawable;
 import uchicago.src.sim.gui.SimGraphics;
 
@@ -9,20 +11,34 @@ import uchicago.src.sim.gui.SimGraphics;
  */
 
 public class RabbitsGrassSimulationAgent implements Drawable {
+	public static final int DEFAULT_ENERGY = 50;
+	private int x = -1;
+	private int y = -1;
+	private int energy = DEFAULT_ENERGY;
 
-	public void draw(SimGraphics arg0) {
-		// TODO Auto-generated method stub
-		
+	public RabbitsGrassSimulationAgent() {}
+	public RabbitsGrassSimulationAgent(int energy) {
+		this.energy = energy;
+	}
+
+	public void draw(SimGraphics G){
+//		G.drawString("R", Color.blue);
+		G.drawCircle(Color.blue);
 	}
 
 	public int getX() {
-		// TODO Auto-generated method stub
-		return 0;
+		return x;
 	}
 
 	public int getY() {
-		// TODO Auto-generated method stub
-		return 0;
+		return y;
 	}
 
+	public void setX(int x) {
+		this.x = x;
+	}
+
+	public void setY(int y) {
+		this.y = y;
+	}
 }
