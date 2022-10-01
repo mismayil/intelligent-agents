@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/intelligent-agents.iml" filepath="$PROJECT_DIR$/.idea/intelligent-agents.iml" />
+      <module fileurl="file://$PROJECT_DIR$/reactive.iml" filepath="$PROJECT_DIR$/reactive.iml" />
     </modules>
   </component>
 </project>
