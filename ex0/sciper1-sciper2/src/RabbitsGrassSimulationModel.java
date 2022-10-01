@@ -1,6 +1,7 @@
 import java.awt.Color;
 import java.util.ArrayList;
 
+import uchicago.src.sim.engine.BasicAction;
 import uchicago.src.sim.engine.Schedule;
 import uchicago.src.sim.engine.SimModelImpl;
 import uchicago.src.sim.engine.SimInit;
@@ -8,6 +9,7 @@ import uchicago.src.sim.gui.DisplaySurface;
 import uchicago.src.sim.gui.ColorMap;
 import uchicago.src.sim.gui.Value2DDisplay;
 import uchicago.src.sim.gui.Object2DDisplay;
+import uchicago.src.sim.util.SimUtilities;
 
 /**
  * Class that implements the simulation model for the rabbits grass
@@ -21,14 +23,14 @@ import uchicago.src.sim.gui.Object2DDisplay;
 
 public class RabbitsGrassSimulationModel extends SimModelImpl {
 	private int gridSize = 20;
-	private int numInitRabbits = 100;
+	private int numInitRabbits = 50;
 	private int numInitGrass = 50;
-	private int grassGrowthRate = 10;
-	private int birthThreshold = 10;
-	private RabbitsGrassSimulationSpace rgsSpace;
+	private int grassGrowthRate = 20;
+	private int birthThreshold = 50;
+	private RabbitsGrassSimulationSpace rgSpace;
 	private Schedule schedule;
 	private DisplaySurface displaySurf;
-	private ArrayList rabbits;
+	private ArrayList<RabbitsGrassSimulationAgent> rabbits;
 
 	public static void main(String[] args) {
 
@@ -70,8 +72,9 @@ public class RabbitsGrassSimulationModel extends SimModelImpl {
 
 	public void setup() {
 		System.out.println("Running setup");
-		rgsSpace = null;
+		rgSpace = null;
 		rabbits = new ArrayList();
+		schedule = new Schedule(1);
 
 		if (displaySurf != null){
 			displaySurf.dispose();
@@ -85,8 +88,8 @@ public class RabbitsGrassSimulationModel extends SimModelImpl {
 
 	public void buildModel() {
 		System.out.println("Running buildModel");
-		rgsSpace = new RabbitsGrassSimulationSpace(gridSize, gridSize);
-		rgsSpace.spreadGrass(numInitGrass);
+		rgSpace = new RabbitsGrassSimulationSpace(gridSize, gridSize);
+		rgSpace.spreadGrass(numInitGrass);
 
 		for (int i = 0; i < numInitRabbits; i++){
 			addNewRabbit();
@@ -96,11 +99,64 @@ public class RabbitsGrassSimulationModel extends SimModelImpl {
 	private void addNewRabbit(){
 		RabbitsGrassSimulationAgent a = new RabbitsGrassSimulationAgent();
 		rabbits.add(a);
-		rgsSpace.addRabbit(a);
+		rgSpace.addRabbit(a);
+	}
+
+	private void removeRabbit(RabbitsGrassSimulationAgent rabbit) {
+		for (int i = 0; i < rabbits.size(); i++) {
+			RabbitsGrassSimulationAgent rb = rabbits.get(i);
+			if (rb == rabbit) {
+				rabbits.remove(i);
+				rgSpace.removeRabbit(rb.getX(), rb.getY());
+				break;
+			}
+		}
 	}
 
 	public void buildSchedule() {
 		System.out.println("Running buildSchedule");
+		class RabbitStep extends BasicAction {
+			public void execute() {
+				SimUtilities.shuffle(rabbits);
+				stepRabbits();
+				removeDeadRabbits();
+				reproduceRabbits();
+				rgSpace.spreadGrass(grassGrowthRate);
+				displaySurf.updateDisplay();
+			}
+		}
+
+		schedule.scheduleActionBeginning(0, new RabbitStep());
+	}
+
+	private void stepRabbits() {
+		for(int i = 0; i < rabbits.size(); i++){
+			RabbitsGrassSimulationAgent rb = rabbits.get(i);
+			rb.step();
+		}
+	}
+
+	private void removeDeadRabbits() {
+		ArrayList<RabbitsGrassSimulationAgent> currentRabbits = (ArrayList<RabbitsGrassSimulationAgent>) rabbits.clone();
+
+		for(int i = 0; i < currentRabbits.size(); i++){
+			RabbitsGrassSimulationAgent rb = currentRabbits.get(i);
+			if (!rb.isAlive()) {
+				removeRabbit(rb);
+			}
+		}
+	}
+
+	private void reproduceRabbits() {
+		ArrayList<RabbitsGrassSimulationAgent> currentRabbits = (ArrayList<RabbitsGrassSimulationAgent>) rabbits.clone();
+
+		for(int i = 0; i < currentRabbits.size(); i++){
+			RabbitsGrassSimulationAgent rb = currentRabbits.get(i);
+			boolean reproduced = rb.reproduce(birthThreshold);
+			if (reproduced) {
+				addNewRabbit();
+			}
+		}
 	}
 
 	public void buildDisplay() {
@@ -110,8 +166,8 @@ public class RabbitsGrassSimulationModel extends SimModelImpl {
 		map.mapColor(RabbitsGrassSimulationSpace.BACKGROUND, Color.white);
 		map.mapColor(RabbitsGrassSimulationSpace.GRASS, Color.green);
 
-		Value2DDisplay displayGrass = new Value2DDisplay(rgsSpace.getCurrentGrassSpace(), map);
-		Object2DDisplay displayRabbits = new Object2DDisplay(rgsSpace.getCurrentRabbitSpace());
+		Value2DDisplay displayGrass = new Value2DDisplay(rgSpace.getCurrentGrassSpace(), map);
+		Object2DDisplay displayRabbits = new Object2DDisplay(rgSpace.getCurrentRabbitSpace());
 		displayRabbits.setObjectList(rabbits);
 
 		displaySurf.addDisplayable(displayGrass, "Grass");

@@ -6,13 +6,17 @@ import uchicago.src.sim.space.Object2DTorus;
  */
 
 public class RabbitsGrassSimulationSpace {
+    private int xSize;
+    private int ySize;
     private Object2DTorus grassSpace;
     private Object2DTorus rabbitSpace;
 
     public static final int BACKGROUND = 0;
     public static final int GRASS = 1;
 
-    public RabbitsGrassSimulationSpace(int xSize, int ySize){
+    public RabbitsGrassSimulationSpace(int xSize, int ySize) {
+        this.xSize = xSize;
+        this.ySize = ySize;
         grassSpace = new Object2DTorus(xSize, ySize);
         rabbitSpace = new Object2DTorus(xSize, ySize);
 
@@ -37,6 +41,7 @@ public class RabbitsGrassSimulationSpace {
                 rabbitSpace.putObjectAt(x, y, rabbit);
                 rabbit.setX(x);
                 rabbit.setY(y);
+                rabbit.setRgSpace(this);
                 return true;
             }
 
@@ -77,5 +82,41 @@ public class RabbitsGrassSimulationSpace {
         }
 
         return BACKGROUND;
+    }
+
+    public boolean isValid(int x, int y) {
+        return x >= 0 && x < xSize && y >= 0 && y < ySize;
+    }
+
+    public boolean isOccupied(int x, int y) {
+        return rabbitSpace.getObjectAt(x, y) != null;
+    }
+
+    public void removeRabbit(int x, int y) {
+        rabbitSpace.putObjectAt(x, y, null);
+    }
+
+    public void addRabbit(RabbitsGrassSimulationAgent rabbit, int x, int y) {
+        rabbitSpace.putObjectAt(x, y, rabbit);
+        rabbit.setX(x);
+        rabbit.setY(y);
+    }
+
+    public void moveRabbit(RabbitsGrassSimulationAgent rabbit, int newX, int newY) {
+        removeRabbit(rabbit.getX(), rabbit.getY());
+        addRabbit(rabbit, newX, newY);
+    }
+
+    public boolean grassExistsAt(int x, int y) {
+        return getGrassAt(x, y) != BACKGROUND;
+    }
+
+    public boolean eatGrass(int x, int y) {
+        if (grassExistsAt(x, y)) {
+            grassSpace.putObjectAt(x, y, BACKGROUND);
+            return true;
+        }
+
+        return false;
     }
 }
