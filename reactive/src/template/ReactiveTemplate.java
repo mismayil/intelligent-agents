@@ -19,8 +19,46 @@ public class ReactiveTemplate implements ReactiveBehavior {
 	private double pPickup;
 	private int numActions;
 	private Agent myAgent;
-	private HashMap<Map.Entry<City, Action>, Double> qTable = new HashMap<Map.Entry<City, Action>, Double>();
-	private HashMap<City, Double> vTable = new HashMap<City, Double>();
+	public static final int PICKUP_ACTION = 1;
+	public static final int MOVE_ACTION = 2;
+
+	private class QState {
+		private final City fromCity;
+		private final City toCity;
+		private final boolean taskAvailable;
+
+		QState(City fromCity, City toCity, boolean taskAvailable) {
+			this.fromCity = fromCity;
+			this.toCity = toCity;
+			this.taskAvailable = taskAvailable;
+		}
+
+		QState(City fromCity, City toCity) {
+			this(fromCity, toCity, true);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+
+			if (!(obj instanceof QState)) {
+				return false;
+			}
+
+			QState q = (QState) obj;
+
+			return (q.fromCity.id == this.fromCity.id) && (q.toCity.id == this.toCity.id) && (q.taskAvailable == this.taskAvailable);
+		}
+
+		@Override
+		public int hashCode() {
+			return this.fromCity.id * 100 + this.toCity.id * 10 + (this.taskAvailable ? 1 : 0);
+		}
+	}
+	private final HashMap<Map.Entry<QState, Integer>, Double> qTable = new HashMap<>();
+	private final HashMap<City, Double> vTable = new HashMap<>();
 	private int id = 0;
 
 	@Override
@@ -35,17 +73,27 @@ public class ReactiveTemplate implements ReactiveBehavior {
 		this.pPickup = discount;
 		this.numActions = 0;
 		this.myAgent = agent;
+
+		learn(topology, td, agent, discount);
 	}
 
 	@Override
 	public Action act(Vehicle vehicle, Task availableTask) {
 		Action action;
 
-		if (availableTask == null || random.nextDouble() > pPickup) {
+		if (availableTask == null) {
 			City currentCity = vehicle.getCurrentCity();
 			action = new Move(currentCity.randomNeighbor(random));
 		} else {
-			action = new Pickup(availableTask);
+			QState qState = new QState(availableTask.pickupCity, availableTask.deliveryCity);
+			double pickupValue = qTable.get(new AbstractMap.SimpleImmutableEntry<>(qState, PICKUP_ACTION));
+			double moveValue = qTable.get(new AbstractMap.SimpleImmutableEntry<>(qState, MOVE_ACTION));
+
+			if (pickupValue > moveValue) {
+				action = new Pickup(availableTask);
+			} else {
+				action = new Move(availableTask.deliveryCity);
+			}
 		}
 		
 		if (numActions >= 1) {
@@ -58,39 +106,36 @@ public class ReactiveTemplate implements ReactiveBehavior {
 
 	public void learn(Topology topology, TaskDistribution td, Agent agent, double discount) {
 		while (true) {
-			HashMap<City, Double> currentVTable = (HashMap<City, Double>) vTable.clone();
+			HashMap<City, Double> oldVTable = new HashMap<>(vTable);
 
-			for (City city: topology.cities()) {
-				List<City> neighbors = city.neighbors();
-				Vehicle vehicle = getVehicleByCity(agent, city);
-				List<Double> qValues = new ArrayList<Double>();
+			for (City fromCity: topology.cities()) {
+				Vehicle vehicle = getVehicle(agent, fromCity);
 
-				for (City neighbor: neighbors) {
-					double probability = td.probability(city, neighbor);
-					int reward = td.reward(city, neighbor);
-					int weight = td.weight(city, neighbor);
-					double discountedValue = discount * probability * currentVTable.getOrDefault(neighbor, 0);
+				for (City toCity: topology.cities()) {
+					QState qState = new QState(fromCity, toCity);
+					double discountedValue = 0;
 
-					if (vehicle != null && weight < vehicle.capacity()) {
-						Task task = new Task(getNewId(), city, neighbor, reward, weight);
-						Action pickupAction = new Pickup(task);
-						double pickupQValue = computeReward(vehicle, task, city, neighbor) + discountedValue;
-						Map.Entry<City, Action> qEntry = new AbstractMap.SimpleImmutableEntry<>(city, pickupAction);
-						qTable.put(qEntry, pickupQValue);
-						qValues.add(pickupQValue);
+					for (City nextCity: topology.cities()) {
+						discountedValue += td.probability(toCity, nextCity) * oldVTable.getOrDefault(nextCity, 0.0);
 					}
 
-					Action moveAction = new Move(neighbor);
-					double moveQValue = computeReward(vehicle, null, city, neighbor) + discountedValue;
-					Map.Entry<City, Action> qEntry = new AbstractMap.SimpleImmutableEntry<>(city, moveAction);
-					qTable.put(qEntry, moveQValue);
-					qValues.add(moveQValue);
+					int reward = td.reward(fromCity, toCity);
+					int weight = td.weight(fromCity, toCity);
+
+					Task task = new Task(getNewId(), fromCity, toCity, reward, weight);
+					double pickupQValue = computeReward(vehicle, task, fromCity, toCity) + discount * discountedValue;
+					double moveQValue = computeReward(vehicle, null, fromCity, toCity) + discount * discountedValue;
+
+					qTable.put(new AbstractMap.SimpleImmutableEntry<>(qState, PICKUP_ACTION), pickupQValue);
+					qTable.put(new AbstractMap.SimpleImmutableEntry<>(qState, MOVE_ACTION), moveQValue);
 				}
 
-				vTable.put(city, Collections.max(qValues));
+				vTable.put(fromCity, getMaxQValue(fromCity));
 			}
 
-
+			if (!changeInVTable(oldVTable)) {
+				break;
+			}
 		}
 	}
 
@@ -99,13 +144,17 @@ public class ReactiveTemplate implements ReactiveBehavior {
 		return id;
 	}
 
-	private Vehicle getVehicleByCity(Agent agent, City city) {
+	private Vehicle getVehicle(Agent agent, City city) {
 		List<Vehicle> vehicles = agent.vehicles();
 
 		for (Vehicle vehicle: vehicles) {
 			if (vehicle.homeCity().id == city.id) {
 				return vehicle;
 			}
+		}
+
+		if (!vehicles.isEmpty()) {
+			return vehicles.get(0);
 		}
 
 		return null;
@@ -119,5 +168,34 @@ public class ReactiveTemplate implements ReactiveBehavior {
 		}
 
 		return reward - vehicle.costPerKm() * fromCity.distanceTo(toCity);
+	}
+
+	private double getMaxQValue(City city) {
+		List<Double> qValues = new ArrayList<>();
+
+		for (Map.Entry<Map.Entry<QState, Integer>, Double> entry: qTable.entrySet()) {
+			Map.Entry<QState, Integer> qEntry= entry.getKey();
+			QState qState = qEntry.getKey();
+			Double qValue = entry.getValue();
+
+			if (qState.fromCity.id == city.id) {
+				qValues.add(qValue);
+			}
+		}
+
+		return Collections.max(qValues);
+	}
+
+	private boolean changeInVTable(HashMap<City, Double> oldVTable) {
+		for (Map.Entry<City, Double> entry: vTable.entrySet()) {
+			City city = entry.getKey();
+			Double value = entry.getValue();
+
+			if (!oldVTable.containsKey(city) || oldVTable.get(city).equals(value)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
